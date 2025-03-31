@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 
 
 @st.cache_data
@@ -19,7 +20,7 @@ st.title("BioTech Applied AI Application")
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Choose a feature:",
-    ["Home", "Dataset Visualization", "KPI and Inital Conditions Visualization", "ML Model Prediction",
+    ["Home", "Data Visualization", "ML Model Prediction",
         "Time Series Prediction for 30L", "Outliers Detection"]
 )
 
@@ -33,7 +34,6 @@ if page == "Home":
     
     Navigate through the sidebar to explore different features of this application:
     - **Data Visualization** allows you to explore datasets interactively.
-    - **KPI and Initial Conditions Visualization** provides an overview of key performance indicators and initial conditions using graphs and charts.
     - **ML Model Prediction** enables you to predict outcomes using machine learning models.
     - **Time Series Prediction for 30L** provides time series forecasting for 30L dataset. This feature is helpful for when 30L batches take a long time,
     so when taking samples at predictable intervals, we can predict the future values.
@@ -101,8 +101,25 @@ elif page == "Data Visualization":
                 include=['number'], exclude=['datetime']).describe())
 
             if st.checkbox("Show charts"):
+                cant_use = [
+                    'Well', 'Culture Time (h)', 'IPTG (mM)', 'Bioreactor']
+                numeric_columns = selected_run_data.select_dtypes(
+                    include=np.number).columns
+                filtered_columns = [
+                    col for col in numeric_columns if col not in cant_use]
+
+                y_choice = st.selectbox("Select target variable:",
+                                        filtered_columns,
+                                        help="Select a target variable to visualize.",
+                                        index=None,
+                                        placeholder="Select a target variable")
+
+                st.scatter_chart(selected_run_data.select_dtypes(
+                    include=['number']), x='Culture Time (h)', y=y_choice)
+
                 st.bar_chart(selected_run_data.select_dtypes(
-                    include=['number']))
+                    include=['number']), x='Culture Time (h)', y=y_choice)
+
         else:
             st.stop()
 
