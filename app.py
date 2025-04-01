@@ -206,9 +206,8 @@ def overall_tab():
     # Statistics summary for overall dataset
     st.subheader("Overall Dataset Summary")
     # Focus on numeric columns for stats
-    df_numeric = df.select_dtypes(
-        include=['number'], exclude=['datetime'])
-    st.write(df_numeric.describe())
+    summary_df = calculate_summary(df)
+    st.dataframe(summary_df, use_container_width=True)
 
 
 def individual_tab():
@@ -286,6 +285,35 @@ def load_data(url):
 def load_data_sheet(url, sheet_name):
     df = pd.read_excel(url, sheet_name=sheet_name)
     return df
+
+def calculate_summary(df):
+    numeric_cols = df.select_dtypes(include="number").columns
+    summary = {}
+    for col in numeric_cols:
+        summary[col] = {
+            "Mean": df[col].mean(),
+            "Min": df[col].min(),
+            "Max": df[col].max(),
+            "Mode": df[col].mode().iloc[0] if not df[col].mode().empty else None,
+            "Standard Deviation": df[col].std(),
+            "Q1": df[col].quantile(0.25),
+            "Q3": df[col].quantile(0.75),
+            "Median": df[col].median(),
+            "Skewness": df[col].skew(),
+            "Variance": df[col].var(),
+            "Interquartile Range": df[col].quantile(0.75) - df[col].quantile(0.25),
+            "Range": df[col].max() - df[col].min(),
+            "Monotonicity": (
+                "Increasing" if df[col].is_monotonic_increasing
+                else "Decreasing" if df[col].is_monotonic_decreasing
+                else "Non-Monotonic"
+            ),
+            "Kurtosis": df[col].kurt(),
+            "Coefficient of Variation": df[col].std() / df[col].mean() if df[col].mean() != 0 else None,
+            "95th Percentile": df[col].quantile(0.95),
+            "5th Percentile": df[col].quantile(0.05),
+        }
+    return pd.DataFrame(summary).T
 
 
 # Set page configuration
