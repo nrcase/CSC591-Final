@@ -4,7 +4,6 @@ import numpy as np
 import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
-import plotly.colors as colors
 import altair as alt
 
 
@@ -126,7 +125,7 @@ def IC_tab():
                     normalized_value = (
                         avg_metric - min_val) / (max_val - min_val)
 
-                # Get color from the fallback list
+                # Get color from the color list
                 color_index = int(normalized_value *
                                   (len(fallback_viridis) - 1))
                 color_val = fallback_viridis[color_index]
@@ -141,8 +140,8 @@ def IC_tab():
                 # Add text annotation
                 fig.add_trace(go.Scatter(x=[0.5], y=[0.5],
                                          mode='text',
-                                         text=[f"{avg_metric:.2f}"],
-                                         textfont_size=12,
+                                         text=[f"{avg_metric:.4f}"],
+                                         textfont=dict(size=12, color="white"),
                                          showlegend=False),
                               row=row_idx, col=col_idx)
 
@@ -286,6 +285,7 @@ def load_data_sheet(url, sheet_name):
     df = pd.read_excel(url, sheet_name=sheet_name)
     return df
 
+
 def calculate_summary(df):
     numeric_cols = df.select_dtypes(include="number").columns
     summary = {}
@@ -329,7 +329,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Title and description
-st.title("BioTech Applied AI Application")
+st.title("BioInsight Application")
 
 # Sidebar navigation
 st.sidebar.title("Navigation")
@@ -342,14 +342,15 @@ page = st.sidebar.radio(
 # Home Page
 if page == "Home":
     st.cache_data.clear()
-    st.header("Welcome to BioTech AI Application!")
+    st.header("Welcome to BioInsight!")
     st.markdown("""
-    Welcome to the BioTech AI Application! This app allows you to explore datasets, visualize data, 
+    Welcome to the BioInsight Application! This app allows you to explore datasets, visualize data, 
     and perform advanced analytics such as machine learning predictions and time series analysis.
     Use the navigation bar on the left to select a feature.
     
     Navigate through the sidebar to explore different features of this application:
     - **Data Visualization** allows you to explore datasets interactively.
+    - **KPI and Initial Conditions Visualization** provides insights into key performance indicators and initial conditions.
     - **ML Model Prediction** enables you to predict outcomes using machine learning models.
     - **Time Series Prediction for 30L** provides time series forecasting for 30L dataset. This feature is helpful for when 30L batches take a long time,
     so when taking samples at predictable intervals, we can predict the future values.
