@@ -329,7 +329,7 @@ def KPI_tab():
 def overall_tab():
     # Overall Data Preview
     st.subheader("Overall Data Preview")
-    st.dataframe(df.head(), use_container_width=True)
+    st.dataframe(df, use_container_width=True)
 
     # Statistics summary for overall dataset
     st.subheader("Overall Dataset Summary")
