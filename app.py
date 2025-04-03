@@ -228,8 +228,10 @@ def individual_tab():
 
         # Individual Run Summary Statistics
         st.subheader(f"Summary Statistics for Batch: {run_choices}")
-        st.write(selected_run_data.select_dtypes(
-            include=['number'], exclude=['datetime']).describe())
+        st.write(calculate_summary(selected_run_data.select_dtypes(
+            include=['number'], exclude=['datetime'])))
+        # st.write(selected_run_data.select_dtypes(
+        #     include=['number'], exclude=['datetime']).describe())
 
         # Optional charts
         if st.checkbox("Show charts"):
