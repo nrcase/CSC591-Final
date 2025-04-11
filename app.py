@@ -5,7 +5,10 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import altair as alt
-
+from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+import joblib
+import os
+from model import ModelDevelopment
 
 def IC_tab():
     st.header("Initial Conditions Visualization")
@@ -326,7 +329,7 @@ def KPI_tab():
         st.error(f"Error loading dataset: {e}")
 
 
-def overall_tab():
+def overall_tab(df):
     # Overall Data Preview
     st.subheader("Overall Data Preview")
     st.dataframe(df, use_container_width=True)
@@ -338,7 +341,7 @@ def overall_tab():
     st.dataframe(summary_df, use_container_width=True)
 
 
-def individual_tab():
+def individual_tab(df):
     # Individual Run Data Visualization
     st.subheader("Individual Run Data Visualization")
 
@@ -405,6 +408,177 @@ def individual_tab():
         else:
             st.stop()
 
+def load_model_data():
+    """Load and return the data pipeline"""
+    try:
+        # Use relative path from current directory
+        project_root = "./"
+        data_path = os.path.join(project_root, 'data', 'Combined_Dataset.xlsx')
+        
+        # Debug information
+        st.write(f"Project root directory: {project_root}")
+        st.write(f"Looking for data file at: {data_path}")
+        st.write(f"File exists: {os.path.exists(data_path)}")
+        
+        if not os.path.exists(data_path):
+            st.error(f"Data file not found at: {data_path}")
+            # List files in the project root directory
+            st.write("Files in project root directory:")
+            for file in os.listdir(project_root):
+                if file.endswith('.xlsx'):
+                    st.write(f"- {file}")
+            return None
+        
+        # Create the model development pipeline
+        pipeline = ModelDevelopment(data_path)
+        if pipeline.load_data():
+            return pipeline
+        return None
+    except Exception as e:
+        st.error(f"Error loading data: {str(e)}")
+        # Show stack trace for debugging
+        import traceback
+        st.code(traceback.format_exc())
+        return None
+
+def plot_actual_vs_predicted(y_test, y_pred, model_name, target):
+    """Plot actual vs predicted values with interactive hover"""
+    fig = go.Figure()
+    
+    # Add scatter plot
+    fig.add_trace(go.Scatter(
+        x=y_test,
+        y=y_pred,
+        mode='markers',
+        name='Predictions',
+        hovertemplate="<b>Actual:</b> %{x:.4f}<br><b>Predicted:</b> %{y:.4f}<extra></extra>"
+    ))
+    
+    # Add perfect prediction line
+    min_val = min(min(y_test), min(y_pred))
+    max_val = max(max(y_test), max(y_pred))
+    fig.add_trace(go.Scatter(
+        x=[min_val, max_val],
+        y=[min_val, max_val],
+        mode='lines',
+        name='Perfect Prediction',
+        line=dict(color='red', dash='dash')
+    ))
+    
+    fig.update_layout(
+        title=f'{model_name}: Actual vs Predicted ({target})',
+        xaxis_title='Actual',
+        yaxis_title='Predicted',
+        height=500,
+        width=800,
+        hovermode='closest',
+        hoverlabel=dict(bgcolor="white", font_size=12)
+    )
+    return fig
+
+def plot_pls_components(model, X, y, title):
+    """Plot PLS components with interactive hover"""
+    try:
+        X_transformed = model.transform(X)
+        
+        # Create subplots
+        fig = go.Figure()
+        
+        if model.n_components >= 2:
+            # Plot first two components
+            fig.add_trace(go.Scatter(
+                x=X_transformed[:, 0],
+                y=X_transformed[:, 1],
+                mode='markers',
+                marker=dict(
+                    color=y,
+                    colorscale='Viridis',
+                    showscale=True,
+                    colorbar=dict(title='Target Value')
+                ),
+                hovertemplate="<b>Component 1:</b> %{x:.4f}<br><b>Component 2:</b> %{y:.4f}<br><b>Target:</b> %{marker.color:.4f}<extra></extra>"
+            ))
+            fig.update_layout(
+                xaxis_title='Component 1',
+                yaxis_title='Component 2',
+                title='First Two PLS Components'
+            )
+        else:
+            # Plot single component against target
+            fig.add_trace(go.Scatter(
+                x=X_transformed[:, 0],
+                y=y,
+                mode='markers',
+                hovertemplate="<b>Component 1:</b> %{x:.4f}<br><b>Target:</b> %{y:.4f}<extra></extra>"
+            ))
+            fig.update_layout(
+                xaxis_title='Component 1',
+                yaxis_title='Target Value',
+                title='First PLS Component vs Target'
+            )
+        
+        # Calculate explained variance
+        var_explained = []
+        total_var = np.var(X, axis=0).sum()
+        X_transformed_full = model.transform(X)
+        
+        for i in range(model.n_components):
+            X_transformed_i = np.zeros_like(X_transformed_full)
+            X_transformed_i[:, :i+1] = X_transformed_full[:, :i+1]
+            X_reconstructed_i = model.inverse_transform(X_transformed_i)
+            unexplained_var = np.var(X - X_reconstructed_i, axis=0).sum()
+            explained_var = (1 - unexplained_var / total_var) * 100
+            var_explained.append(explained_var)
+        
+        # Create explained variance plot
+        fig_var = go.Figure()
+        fig_var.add_trace(go.Scatter(
+            x=list(range(1, model.n_components + 1)),
+            y=var_explained,
+            mode='lines+markers',
+            hovertemplate="<b>Components:</b> %{x}<br><b>Explained Variance:</b> %{y:.2f}%<extra></extra>"
+        ))
+        
+        fig_var.update_layout(
+            title='Explained Variance by Components',
+            xaxis_title='Number of Components',
+            yaxis_title='Cumulative Explained Variance (%)',
+            height=400,
+            width=800,
+            hovermode='x unified',
+            hoverlabel=dict(bgcolor="white", font_size=12)
+        )
+        
+        return fig, fig_var
+    except Exception as e:
+        st.warning(f"Could not plot PLS components: {str(e)}")
+        st.write(f"Debug info - X shape: {X.shape}, n_components: {model.n_components}")
+        st.write(f"Model coefficients shape: {model.coef_.shape}")
+        return None, None
+
+def load_models_and_scalers(scale, target):
+    """Load models, scaler, and label encoders for a given scale and target"""
+    try:
+        scale_clean = scale.replace(' ', '_')
+        target_clean = target.replace(' ', '_').replace('(', '').replace(')', '').replace('/', '_per_')
+        base_path = "./"
+        
+        # Load scaler and encoders first
+        scaler = joblib.load(os.path.join(base_path, 'models', f"scaler_{scale_clean}_{target_clean}.joblib"))
+        label_encoders = joblib.load(os.path.join(base_path, 'models', f"label_encoders_{scale_clean}_{target_clean}.joblib"))
+        
+        # Load models
+        models = {}
+        model_names = ['RandomForest', 'XGBoost', 'SVR', 'PLS']
+        for model_name in model_names:
+            model_path = os.path.join(base_path, 'models', f"{model_name}_{scale_clean}_{target_clean}.joblib")
+            models[model_name] = joblib.load(model_path)
+            
+        return models, scaler, label_encoders
+    except Exception as e:
+        st.error(f"Error loading models and scalers: {str(e)}")
+        return None, None, None
+
 
 @st.cache_data
 def load_data(url):
@@ -447,91 +621,221 @@ def calculate_summary(df):
     return pd.DataFrame(summary).T
 
 
-# Set page configuration
-st.set_page_config(page_title="BioTech AI Application",
-                   layout="wide", page_icon=":material/science:")
+def main():
+    # Set page configuration
+    st.set_page_config(page_title="BioTech AI Application",
+                       layout="wide", page_icon=":material/science:")
 
-st.markdown("""
-<style>
-* {
-    overflow-anchor: none !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# Title and description
-st.title("BioInsight Application")
-
-# Sidebar navigation
-st.sidebar.title("Navigation")
-page = st.sidebar.radio(
-    "Choose a feature:",
-    ["Home", "Data Visualization", "KPI and Initial Conditions Visualization", "ML Model Prediction",
-        "Time Series Prediction for 30L", "Outliers Detection"]
-)
-
-# Home Page
-if page == "Home":
-    st.cache_data.clear()
-    st.header("Welcome to BioInsight!")
     st.markdown("""
-    Welcome to the BioInsight Application! This app allows you to explore datasets, visualize data, 
-    and perform advanced analytics such as machine learning predictions and time series analysis.
-    Use the navigation bar on the left to select a feature.
-    
-    Navigate through the sidebar to explore different features of this application:
-    - **Data Visualization** allows you to explore datasets interactively.
-    - **KPI and Initial Conditions Visualization** provides insights into key performance indicators and initial conditions.
-    - **ML Model Prediction** enables you to predict outcomes using machine learning models.
-    - **Time Series Prediction for 30L** provides time series forecasting for 30L dataset. This feature is helpful for when 30L batches take a long time,
-    so when taking samples at predictable intervals, we can predict the future values.
-    - **Outliers Detection** helps you identify anomalies in within each dataset.
-    """)
+    <style>
+    * {
+        overflow-anchor: none !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# Data Visualization Page
-elif page == "Data Visualization":
-    st.cache_data.clear()
+    if 'pipeline' not in st.session_state:
+        st.session_state.pipeline = load_model_data()
 
-    st.header("Data Visualization")
-    # Dataset selection
-    st.markdown("### Select a Dataset")
-    df_choice = st.selectbox(
-        "Choose a dataset:",
-        ["1mL", "30L"],
-        help="Select the dataset you want to visualize.",
-        placeholder="Select a dataset",
-        index=None,
+    if st.session_state.pipeline is None:
+        st.error("Failed to load data. Please check the data file and try again.")
+        return
+
+    # Title and description
+    st.title("BioInsight Application")
+
+    # Sidebar navigation
+    st.sidebar.title("Navigation")
+    page = st.sidebar.radio(
+        "Choose a feature:",
+        ["Home", "Data Visualization", "KPI and Initial Conditions Visualization", "ML Model Prediction",
+            "Time Series Prediction for 30L", "Outliers Detection"]
     )
 
-    # Load the selected dataset
-    if df_choice == "1mL":
-        uploaded_file = "data/1mL_Dataset.xlsx"
-    elif df_choice == "30L":
-        uploaded_file = "data/30L_Dataset.xlsx"
-    else:
-        st.stop()
+    # Home Page
+    if page == "Home":
+        st.cache_data.clear()
+        st.header("Welcome to BioInsight!")
+        st.markdown("""
+        Welcome to the BioInsight Application! This app allows you to explore datasets, visualize data, 
+        and perform advanced analytics such as machine learning predictions and time series analysis.
+        Use the navigation bar on the left to select a feature.
+        
+        Navigate through the sidebar to explore different features of this application:
+        - **Data Visualization** allows you to explore datasets interactively.
+        - **KPI and Initial Conditions Visualization** provides insights into key performance indicators and initial conditions.
+        - **ML Model Prediction** enables you to predict outcomes using machine learning models.
+        - **Time Series Prediction for 30L** provides time series forecasting for 30L dataset. This feature is helpful for when 30L batches take a long time,
+        so when taking samples at predictable intervals, we can predict the future values.
+        - **Outliers Detection** helps you identify anomalies in within each dataset.
+        """)
 
-    try:
-        df = load_data(uploaded_file)
-        st.success(f"Loaded {df_choice} dataset successfully!")
-        overall, individual = st.tabs(
-            ["Overall Data Visualization", "Individual Run Data Visualization"])
-        with overall:
-            overall_tab()
+    # Data Visualization Page
+    elif page == "Data Visualization":
+        st.cache_data.clear()
 
-        with individual:
-            individual_tab()
+        st.header("Data Visualization")
+        # Dataset selection
+        st.markdown("### Select a Dataset")
+        df_choice = st.selectbox(
+            "Choose a dataset:",
+            ["1mL", "30L"],
+            help="Select the dataset you want to visualize.",
+            placeholder="Select a dataset",
+            index=None,
+        )
 
-    except Exception as e:
-        st.error(f"Error loading dataset: {e}")
+        # Load the selected dataset
+        if df_choice == "1mL":
+            uploaded_file = "data/1mL_Dataset.xlsx"
+        elif df_choice == "30L":
+            uploaded_file = "data/30L_Dataset.xlsx"
+        else:
+            st.stop()
 
-elif page == "KPI and Initial Conditions Visualization":
-    st.cache_data.clear()
-    KPI, IC = st.tabs(
-        ["KPI Visualization", "Inital Conditions Visualization"])
+        try:
+            df = load_data(uploaded_file)
+            st.success(f"Loaded {df_choice} dataset successfully!")
+            overall, individual = st.tabs(
+                ["Overall Data Visualization", "Individual Run Data Visualization"])
+            with overall:
+                overall_tab(df)
 
-    with KPI:
-        KPI_tab()
+            with individual:
+                individual_tab(df)
 
-    with IC:
-        IC_tab()
+        except Exception as e:
+            st.error(f"Error loading dataset: {e}")
+
+    elif page == "KPI and Initial Conditions Visualization":
+        st.cache_data.clear()
+        KPI, IC = st.tabs(
+            ["KPI Visualization", "Inital Conditions Visualization"])
+
+        with KPI:
+            KPI_tab()
+
+        with IC:
+            IC_tab()
+
+    elif page == "ML Model Prediction":
+        st.header("Model Results and Comparison")
+        
+        # Scale and target selection
+        scale = st.selectbox("Select Scale", ["1 mL", "30 L"])
+        target = st.selectbox("Select Target", 
+            ["Final OD (OD 600)", "GFPuv (g/L)"])
+        
+        try:
+            # Prepare data
+            X, y, feature_cols = st.session_state.pipeline.prepare_data(scale, target)
+            X_selected, _ = st.session_state.pipeline.select_features(X, y)
+            
+            # Load models and scalers
+            models, scaler, label_encoders = load_models_and_scalers(scale, target)
+            
+            if models is None:
+                st.error("Failed to load models. Please ensure models have been trained.")
+                return
+            
+            # Evaluate each model
+            for model_name, model in models.items():
+                try:
+                    # Make predictions
+                    if model_name == 'PLS':
+                        # For PLS, we use all features since it handles feature selection internally
+                        y_pred = model.predict(X_selected)
+                    else:
+                        y_pred = model.predict(X_selected)
+                    
+                    rmse = np.sqrt(mean_squared_error(y, y_pred))
+                    r2 = r2_score(y, y_pred)
+                    
+                    # Display results
+                    st.subheader(f"{model_name} Results")
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("Model Performance:")
+                        st.write(f"RMSE: {rmse:.4f}")
+                        st.write(f"R2 Score: {r2:.4f}")
+                        
+                        # Show feature importance if available
+                        if hasattr(model, 'feature_importances_'):
+                            importance = pd.DataFrame({
+                                'feature': X_selected.columns,
+                                'importance': model.feature_importances_
+                            }).sort_values('importance', ascending=False)
+                            st.write("\nTop 5 Important Features:")
+                            st.write(importance.head())
+                        
+                        # Show PLS-specific information
+                        if model_name == 'PLS':
+                            st.write("\nPLS Model Information:")
+                            st.write(f"Number of components: {model.n_components}")
+                            
+                            # Calculate explained variance
+                            X_transformed = model.transform(X_selected)
+                            X_reconstructed = model.inverse_transform(X_transformed)
+                            total_var = np.var(X_selected, axis=0).sum()
+                            explained_var = 1 - np.var(X_selected - X_reconstructed, axis=0).sum() / total_var
+                            st.write(f"Total explained variance: {explained_var * 100:.2f}%")
+                            
+                            # Show loadings
+                            loadings = pd.DataFrame(
+                                model.x_loadings_,
+                                columns=[f'Component {i+1}' for i in range(model.n_components)],
+                                index=X_selected.columns
+                            )
+                            st.write("\nComponent Loadings (top 5 features):")
+                            st.write(loadings.abs().sum(axis=1).sort_values(ascending=False).head())
+                    
+                    with col2:
+                        st.plotly_chart(plot_actual_vs_predicted(y, y_pred, model_name, target),
+                            use_container_width=True)
+                    
+                    # Show PLS components plot
+                    if model_name == 'PLS':
+                        fig_components, fig_variance = plot_pls_components(model, X_selected, y, 
+                            f"PLS Components Analysis - {scale}, {target}")
+                        if fig_components is not None:
+                            st.plotly_chart(fig_components, use_container_width=True)
+                            st.plotly_chart(fig_variance, use_container_width=True)
+                    
+                except Exception as e:
+                    st.warning(f"Could not evaluate {model_name} model: {str(e)}")
+            
+            # Interactive prediction
+            if models:
+                st.subheader("Interactive Prediction")
+                st.write("Select feature values for prediction:")
+                
+                input_features = {}
+                for feature in X_selected.columns:
+                    mean_val = float(X_selected[feature].mean())
+                    std_val = float(X_selected[feature].std())
+                    input_features[feature] = st.slider(
+                        feature,
+                        min_value=mean_val - 2*std_val,
+                        max_value=mean_val + 2*std_val,
+                        value=mean_val,
+                        format="%.2f"
+                    )
+                
+                if st.button("Predict"):
+                    input_df = pd.DataFrame([input_features])
+                    st.write("\nPredictions:")
+                    for model_name, model in models.items():
+                        try:
+                            # All models can use the same input features since PLS handles feature selection internally
+                            prediction = model.predict(input_df)[0]
+                            st.write(f"{model_name}: {prediction:.4f}")
+                        except Exception as e:
+                            st.warning(f"Could not make prediction with {model_name}: {str(e)}")
+            
+        except Exception as e:
+            st.error(f"Error in model evaluation: {str(e)}")
+            st.write("Please ensure models have been trained and saved correctly.")
+
+if __name__ == "__main__":
+    main()
